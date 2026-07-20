@@ -19,8 +19,10 @@ mono_crash.*.json
 # ─── Tooling de agentes (Claude Code / skills) ──────────────
 # Herramientas de IA, no son parte del juego. Nico las reinstala
 # cuando quiera. Si preferís versionarlas para compartir con el
-# equipo, borrá la línea de abajo.
+# equipo, borrá las líneas de abajo.
+# (skills-lock.json SÍ se versiona: registra qué skills usa el proyecto)
 .agents/
+.claude/
 
 # ─── Sistema operativo ──────────────────────────────────────
 Thumbs.db
