@@ -1,0 +1,20 @@
+; Engine configuration file.
+; Proyecto StreamerRPG — RPG satírico por turnos.
+;
+; Este archivo lo va a completar Godot al abrirlo por primera vez.
+; Está el mínimo para que Godot reconozca la carpeta como proyecto.
+
+config_version=5
+
+[application]
+
+config/name="StreamerRPG"
+config/description="RPG satírico por turnos ambientado en un mundo post-apocalíptico de streamers."
+config/features=PackedStringArray("4.3", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
