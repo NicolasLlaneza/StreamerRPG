@@ -4,40 +4,45 @@ extends RefCounted
 ## Un combatiente del sistema de batalla por turnos.
 ##
 ## Es LÓGICA PURA: no sabe nada de sprites, nodos ni pantalla. Solo maneja
-## sus stats, su HP y su barra ATB "Buffering". La parte visual la resuelve
-## quien lo use (battle.gd), escuchando las señales de acá abajo.
-##
-## Separar la lógica de lo visual es una de las mejores costumbres en Godot:
-## te deja cambiar los gráficos sin tocar las reglas del juego.
+## sus stats, su HP, su barra ATB "Buffering" y sus ESTADOS (Hype, Lag, etc.).
+## La parte visual la resuelve battle.gd escuchando las señales de acá abajo.
 
-## Se emite cuando la barra ATB se llenó y a este combatiente le toca actuar.
+## La barra ATB se llenó: le toca actuar.
 signal acted
-## Se emite cuando cambia el HP (para refrescar la barra de vida en pantalla).
+## Cambió el HP (para refrescar la barra de vida).
 signal hp_changed(current: int, maximum: int)
-## Se emite cuando el HP llega a 0.
+## Cambiaron los estados activos (para refrescar el texto de estados).
+signal status_changed
+## El HP llegó a 0.
 signal died
 
-## Cuánto tiene que cargar la barra ATB (de 0 a 100) para poder actuar.
+## Cuánto tiene que cargar la barra ATB (0 a 100) para poder actuar.
 const ATB_MAX: float = 100.0
+## Con Hype activo, el ataque se multiplica por esto.
+const HYPE_ATTACK_MULTIPLIER: float = 1.5
 
-# --- Stats base (se definen al crear el combatiente) ---
+# --- Stats base ---
 var display_name: String
 var max_hp: int
 var attack: int
 var defense: int
-var speed: int  ## Cuántos puntos de ATB carga por segundo. Más SPD = actúa más seguido.
+var speed: int      ## Cuánto ATB carga por segundo. Más SPD = actúa más seguido.
+var technique: int  ## TEC: potencia de las habilidades especiales.
 
 # --- Estado actual ---
 var current_hp: int
 var atb: float = 0.0
+## Estados activos: nombre -> turnos restantes. Ej: {"hype": 3, "lag": 1}
+var _statuses: Dictionary = {}
 
 
-func _init(p_name: String, p_hp: int, p_atk: int, p_def: int, p_spd: int) -> void:
+func _init(p_name: String, p_hp: int, p_atk: int, p_def: int, p_spd: int, p_tec: int) -> void:
 	display_name = p_name
 	max_hp = p_hp
 	attack = p_atk
 	defense = p_def
 	speed = p_spd
+	technique = p_tec
 	current_hp = max_hp
 
 
@@ -45,9 +50,7 @@ func is_alive() -> bool:
 	return current_hp > 0
 
 
-## Avanza la barra ATB según la velocidad. Cuando se llena, avisa con `acted`
-## y vuelve a cero. Esto es el corazón del sistema "Buffering": los rápidos
-## actúan más seguido, pero nadie rompe el ritmo por turnos.
+## Avanza la barra ATB según la velocidad. Al llenarse, avisa con `acted`.
 func tick(delta: float) -> void:
 	if not is_alive():
 		return
@@ -57,11 +60,63 @@ func tick(delta: float) -> void:
 		acted.emit()
 
 
-## Recibe un ataque. El daño real es el ataque del rival menos la defensa
-## propia, con un mínimo de 1 (nunca un golpe hace 0).
+## Recibe un ataque ya calculado (mínimo 1 de daño; nunca 0).
 func take_damage(incoming_attack: int) -> void:
 	var damage: int = max(1, incoming_attack - defense)
 	current_hp = max(0, current_hp - damage)
 	hp_changed.emit(current_hp, max_hp)
 	if current_hp == 0:
 		died.emit()
+
+
+# --------------------------------------------------------------------------
+# Estados (Hype, Lag, y los que vengan)
+# --------------------------------------------------------------------------
+
+## Aplica (o refresca) un estado por una cantidad de turnos.
+func apply_status(status_name: String, turns: int) -> void:
+	_statuses[status_name] = turns
+	status_changed.emit()
+
+
+func has_status(status_name: String) -> bool:
+	return _statuses.get(status_name, 0) > 0
+
+
+## El ataque EFECTIVO, con Hype aplicado si está activo.
+func effective_attack() -> int:
+	if has_status("hype"):
+		return int(round(attack * HYPE_ATTACK_MULTIPLIER))
+	return attack
+
+
+## Se llama cuando a este combatiente le toca actuar (su ATB se llenó).
+## Devuelve false si está LAGGED (pierde el turno). Consume 1 turno de Lag
+## y baja la duración de los buffs (el turno perdido igual "cuenta").
+func begin_turn() -> bool:
+	if has_status("lag"):
+		_statuses["lag"] -= 1
+		_tick_down_buffs()
+		status_changed.emit()
+		return false
+	return true
+
+
+## Se llama al terminar una acción normal: baja la duración de los buffs.
+func end_turn() -> void:
+	_tick_down_buffs()
+	status_changed.emit()
+
+
+func _tick_down_buffs() -> void:
+	if _statuses.get("hype", 0) > 0:
+		_statuses["hype"] -= 1
+
+
+## Texto compacto de los estados activos, ej: "Hype 2 · Lag 1". Vacío si no hay.
+func status_text() -> String:
+	var parts: Array[String] = []
+	for key: String in _statuses:
+		if _statuses[key] > 0:
+			parts.append("%s %d" % [key.capitalize(), _statuses[key]])
+	return " · ".join(parts)
