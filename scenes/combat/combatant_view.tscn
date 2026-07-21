@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://bt8fe5jqbuc5p"]
+
+[node name="CombatantView" type="Node2D" unique_id=2116722872]
+
+[node name="Body" type="ColorRect" parent="." unique_id=1814657317]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="NameLabel" type="Label" parent="." unique_id=946829957]
+offset_right = 40.0
+offset_bottom = 23.0
