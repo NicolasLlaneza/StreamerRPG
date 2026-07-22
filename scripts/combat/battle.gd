@@ -1,28 +1,28 @@
 extends Node2D
 
-## PROTOTIPO de batalla por turnos con ATB "Buffering", habilidades y estados.
+## Batalla por turnos con ATB "Buffering", habilidades y estados.
 ##
-## Las barras ATB cargan según SPD. Cuando se llena la del ENEMIGO, ataca solo.
-## Cuando se llena la TUYA, el combate se PAUSA y elegís del menú:
-##   • Atacar → daño físico normal.
-##   • Mate   → te da HYPE (sube tu ataque x1.5 durante 3 turnos).
-##   • Bomba  → daño (escala con TEC) y deja LAGGED al enemigo (pierde 1 turno).
+## Cambio importante respecto a la versión anterior: ya NO dibujamos cada
+## combatiente a mano. Instanciamos la escena reusable combatant_view.tscn,
+## que se encarga sola de mostrar barras, nombre y estados. Este script pasa a
+## ocuparse solo de las REGLAS del combate.
 ##
-## Interfaz creada por código para que la escena sea un solo nodo. Más adelante
-## lo pasamos a escenas reales hechas en el editor.
+## Ese es el patrón central de Godot: una escena reusable + instanciarla N veces.
+## Cuando sumemos la party de 3, es literalmente una línea más por personaje.
+
+## preload() carga la escena al compilar. Es la forma recomendada cuando la ruta
+## es fija: si el archivo no existe, te avisa enseguida y no en pleno combate.
+const COMBATANT_VIEW_SCENE := preload("res://scenes/combat/combatant_view.tscn")
 
 var _player: Combatant
 var _enemy: Combatant
+var _player_view: CombatantView
+var _enemy_view: CombatantView
+
 var _battle_over: bool = false
 var _waiting_for_player: bool = false
 
-# Interfaz (se llena en _build_ui)
-var _player_hp: ProgressBar
-var _player_atb: ProgressBar
-var _player_status: Label
-var _enemy_hp: ProgressBar
-var _enemy_atb: ProgressBar
-var _enemy_status: Label
+# Interfaz propia de la batalla (menú y log). Las barras ahora viven en la vista.
 var _action_buttons: Array[Button] = []
 var _log: RichTextLabel
 
@@ -32,25 +32,28 @@ func _ready() -> void:
 	_player = Combatant.new("Protagonista", 60, 14, 4, 45, 12)
 	_enemy = Combatant.new("Fan Toxico", 90, 11, 6, 30, 4)
 
-	_build_ui()
+	_player_view = _spawn_view(_player, Color(0.30, 0.50, 0.90), Vector2(200.0, 180.0))
+	_enemy_view = _spawn_view(_enemy, Color(0.90, 0.35, 0.30), Vector2(880.0, 180.0))
+
+	_build_battle_ui()
 
 	_player.acted.connect(_on_player_ready)
 	_enemy.acted.connect(_on_enemy_ready)
-
-	_player.hp_changed.connect(func(current: int, _maximum: int) -> void:
-		_player_hp.value = current)
-	_enemy.hp_changed.connect(func(current: int, _maximum: int) -> void:
-		_enemy_hp.value = current)
-
-	_player.status_changed.connect(func() -> void:
-		_player_status.text = _player.status_text())
-	_enemy.status_changed.connect(func() -> void:
-		_enemy_status.text = _enemy.status_text())
-
 	_player.died.connect(_on_died.bind(_player))
 	_enemy.died.connect(_on_died.bind(_enemy))
 
 	_log_line("[b]Empieza la batalla![/b] Cuando se llene tu barra, elegí una acción.")
+
+
+## Crea una vista para un combatiente y la deja lista en pantalla.
+func _spawn_view(combatant: Combatant, color: Color, pos: Vector2) -> CombatantView:
+	var view: CombatantView = COMBATANT_VIEW_SCENE.instantiate()
+	view.position = pos
+	# Primero al árbol (ahí corre su _ready y sus @onready quedan listos)...
+	add_child(view)
+	# ...y recién después la conectamos con la lógica.
+	view.bind(combatant, color)
+	return view
 
 
 func _process(delta: float) -> void:
@@ -58,27 +61,26 @@ func _process(delta: float) -> void:
 		return
 	_player.tick(delta)
 	_enemy.tick(delta)
-	_player_atb.value = _player.atb
-	_enemy_atb.value = _enemy.atb
+	# Cada vista refresca su propia barra ATB.
+	_player_view.update_atb()
+	_enemy_view.update_atb()
 
 
 # --------------------------------------------------------------------------
 # Turnos
 # --------------------------------------------------------------------------
 
-## Le toca al jugador: chequeamos Lag, y si puede actuar mostramos el menú.
 func _on_player_ready() -> void:
 	if _battle_over:
 		return
 	if not _player.begin_turn():
 		_log_line("[color=orange]Estás LAGGED! Perdés el turno.[/color]")
-		return  # el tiempo se reanuda solo (no pausamos)
+		return
 	_waiting_for_player = true
 	_set_menu_visible(true)
 	_log_line("[color=aqua]Tu turno![/color] Elegí una acción.")
 
 
-## Le toca al enemigo (automático): chequea Lag y ataca.
 func _on_enemy_ready() -> void:
 	if _battle_over or not _enemy.is_alive():
 		return
@@ -89,7 +91,7 @@ func _on_enemy_ready() -> void:
 	_enemy.end_turn()
 
 
-# --- Acciones del jugador (una por botón del menú) ---
+# --- Acciones del jugador ---
 
 func _on_attack_pressed() -> void:
 	if not _waiting_for_player:
@@ -118,7 +120,6 @@ func _on_bomba_pressed() -> void:
 	_finish_player_turn()
 
 
-## Cierra el turno del jugador: baja buffs, oculta el menú y reanuda el tiempo.
 func _finish_player_turn() -> void:
 	_player.end_turn()
 	_set_menu_visible(false)
@@ -127,7 +128,6 @@ func _finish_player_turn() -> void:
 
 # --- Utilidades de combate ---
 
-## Ataque físico de `attacker` a `target`, usando el ataque efectivo (con Hype).
 func _deal_attack(attacker: Combatant, target: Combatant) -> void:
 	if not attacker.is_alive() or not target.is_alive():
 		return
@@ -146,20 +146,10 @@ func _on_died(who: Combatant) -> void:
 
 
 # --------------------------------------------------------------------------
-# Interfaz (placeholder). Se reemplaza por escenas reales pronto.
+# Interfaz de la batalla (menú de acciones + log)
 # --------------------------------------------------------------------------
-func _build_ui() -> void:
-	_player_hp = ProgressBar.new()
-	_player_atb = ProgressBar.new()
-	_player_status = Label.new()
-	_enemy_hp = ProgressBar.new()
-	_enemy_atb = ProgressBar.new()
-	_enemy_status = Label.new()
 
-	_make_panel(_player, Color(0.30, 0.50, 0.90), 200.0, _player_hp, _player_atb, _player_status)
-	_make_panel(_enemy, Color(0.90, 0.35, 0.30), 880.0, _enemy_hp, _enemy_atb, _enemy_status)
-
-	# Menú de acciones (oculto hasta tu turno).
+func _build_battle_ui() -> void:
 	_add_action_button("Atacar", 0, _on_attack_pressed)
 	_add_action_button("Mate (Hype)", 1, _on_mate_pressed)
 	_add_action_button("Bomba (Lag)", 2, _on_bomba_pressed)
@@ -187,36 +177,6 @@ func _set_menu_visible(is_visible: bool) -> void:
 	for button: Button in _action_buttons:
 		button.visible = is_visible
 		button.disabled = not is_visible
-
-
-func _make_panel(cbt: Combatant, color: Color, x: float, hp_bar: ProgressBar, atb_bar: ProgressBar, status_label: Label) -> void:
-	var body := ColorRect.new()
-	body.color = color
-	body.position = Vector2(x, 210.0)
-	body.size = Vector2(120.0, 160.0)
-	add_child(body)
-
-	var name_label := Label.new()
-	name_label.text = cbt.display_name
-	name_label.position = Vector2(x, 180.0)
-	add_child(name_label)
-
-	status_label.position = Vector2(x, 378.0)
-	status_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-	add_child(status_label)
-
-	hp_bar.max_value = cbt.max_hp
-	hp_bar.value = cbt.current_hp
-	hp_bar.position = Vector2(x, 402.0)
-	hp_bar.size = Vector2(180.0, 22.0)
-	add_child(hp_bar)
-
-	atb_bar.max_value = Combatant.ATB_MAX
-	atb_bar.value = 0.0
-	atb_bar.modulate = Color(1.0, 0.85, 0.2)
-	atb_bar.position = Vector2(x, 430.0)
-	atb_bar.size = Vector2(180.0, 12.0)
-	add_child(atb_bar)
 
 
 func _log_line(text: String) -> void:

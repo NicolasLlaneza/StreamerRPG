@@ -1,11 +1,26 @@
 [gd_scene format=3 uid="uid://bt8fe5jqbuc5p"]
 
-[node name="CombatantView" type="Node2D" unique_id=2116722872]
+[ext_resource type="Script" uid="uid://dau4s5frdbyxf" path="res://scripts/combat/combatant_view.gd" id="1_view"]
 
-[node name="Body" type="ColorRect" parent="." unique_id=1814657317]
+[node name="CombatantView" type="Node2D"]
+script = ExtResource("1_view")
+
+[node name="Body" type="ColorRect" parent="."]
 offset_right = 40.0
 offset_bottom = 40.0
 
-[node name="NameLabel" type="Label" parent="." unique_id=946829957]
+[node name="NameLabel" type="Label" parent="."]
 offset_right = 40.0
 offset_bottom = 23.0
+
+[node name="StatusLabel" type="Label" parent="."]
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="HPBar" type="ProgressBar" parent="."]
+offset_right = 40.0
+offset_bottom = 27.0
+
+[node name="ATBBar" type="ProgressBar" parent="."]
+offset_right = 40.0
+offset_bottom = 27.0
